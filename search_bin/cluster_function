@@ -1,0 +1,59 @@
+#!/bin/bash
+
+function cluster_function 
+{
+
+mkdir cluster_directorio
+mkdir ./cluster_directorio/clusters
+
+cp $1 ./cluster_directorio/archivo ##$1 era el file cluster
+
+registros=$(awk 'END{print(NR)}' ./cluster_directorio/archivo) 
+sed -i 's/^[0-9] //' ./cluster_directorio/archivo
+
+for i in $(seq 1 $registros)
+do
+
+  #Para cada cluster creo un archivo distinto
+
+  awk -v awki=$i '(NR==awki){print $0}' ./cluster_directorio/archivo > ./cluster_directorio/clusters/"cluster_$i"
+        
+        ##Creo un vector con los fields de cada linea, y obtengo el numero de elementos del field
+  
+  awk -v awki=$i 'BEGIN{num=0}
+
+  (NR==awki){
+  split($0,vector," ");
+  for (i in vector) num=num+1}
+
+  END{OFS="\t" ; print(awki, num, vector[1], vector[2], vector[3], vector[4]) }' ./cluster_directorio/archivo >> ./cluster_directorio/cluster_tabla
+
+done
+
+rm ./cluster_directorio/archivo
+
+#sed -i  's/ /\t/g' ./cluster_directorio/cluster_tabla
+
+awk '( $1 <= 35 ){print $0}' ./cluster_directorio/cluster_tabla > cluster_resumen
+
+}
+
+function cluster_function2
+{
+if [ -d ./cluster_directorio ]
+then
+ echo -n "cluster_directorio ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+	 y|yes|YES) rm -r cluster_directorio
+		    cluster_function $1;;
+	 *)echo "cluster_function se ha detenido";;
+esac
+else
+ cluster_function $1
+fi
+}
+
+cluster_function2 out.blastp_evalue.mci.I45  ##Aca va el nombre del archivo a analizar
+
+

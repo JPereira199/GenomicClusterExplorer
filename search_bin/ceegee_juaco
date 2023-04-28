@@ -1,0 +1,104 @@
+#!/bin/bash
+
+function jceegee 
+{
+
+##$1 Mfasta $2 out.mci
+
+###---------------------------------------------------------------------------------------------------------------
+
+mkdir jceegee_directorio
+
+cp $1 ./jceegee_directorio
+cp $2 ./jceegee_directorio
+cd ./jceegee_directorio
+
+mv $1 Mfasta
+mv $2 clusters
+#------------------------------------------------------------------------------------------------------------------
+
+
+sed 's/\.$/\&/' Mfasta | sed 's/>.*/&\&/' | tr -d "\n" | tr "&" "\n" | sed 's!\([[:alpha:]]\)\(>\)!\1\&\2! ' | tr "&" "\n" > A
+mv A Mfasta
+
+
+### Recorriendo por linea cada cluster ### ------------------------------------------------------------------------------------------
+IFSold=$IFS
+IFS=$'\n'
+count1=0
+
+
+mkdir ./clusters_cg
+for line in $(cat clusters)
+do
+	#$echo "$line"
+        let count1++
+	count2=0
+	echo "$count1"
+        
+	### Recorriendo por espacio los genes de cada cluster ### -------------------------------------------------------------------
+
+	IFS=$IFSold
+        for gen in $line
+        do
+		let count2++
+ 		
+		grep -A1 "$gen" Mfasta | grep -v "$gen" > bases
+		len_bases=$( grep -o [ATCGatcg] bases |  wc -l )  ##Recordar no dejar espacios entre la 
+		len_cg=$( grep -o [CGcg] bases | wc -l )          ##variable a definir y su valor
+                
+                
+		if (( len_bases == 0  ))   ## Sirve para detectar cuando fallas en la regex que detecta las bases
+		then
+		
+		echo "$count1, $count2, $gen"
+		fi
+
+		awk -v awk_bases=$len_bases -v awk_cg=$len_cg 'END{ cg=(awk_cg/awk_bases); printf("%.5f %.0f \n", cg, awk_bases ) }' bases >> "./clusters_cg/cluster_cg_$count1"  ##Porcentaje de GC y largo de cada gen en un cluster
+                  
+        done
+	
+	#### Calculo del promedio
+	awk  'BEGIN{total_CG=0; total_len=0}  {CG=$1 * $2; total_CG=total_CG + CG  ; total_len=total_len + $2  } END{prom_CG=total_CG/total_len; print(  prom_CG  )  }  ' ./clusters_cg/cluster_cg_"$count1" >> prom_cg
+   	
+	#### Obtencion del minimo y el maximo
+	awk '{print $1}' ./clusters_cg/cluster_cg_"$count1" | awk 'BEGIN{ min=999999; max=0; FS="\n"; RS=""} 
+{ for (i=1; i<=NF; i++) {if (min > $i) {min= $i} if (max < $i) {max= $i}} }
+END{print(min, max)}' >> min_max_cg
+	
+	#### Obtencion del desvio estandar del porcentaje
+	prom_val=$(awk -v count1=$count1 '(NR==count1){print $2}' prom_cg)
+	
+	awk  '{print $1}' ./clusters_cg/cluster_cg_"$count1" | awk -v prom=$prom_val  'BEGIN{ sum=0  }  {sum=prom - $1; sum=sum^2} END{ sum=sum/NR; sum=sqrt(sum); print sum  } ' >> sd_cg
+
+
+	### -------------------------------------------------------------------------------------------------------------------
+
+done
+IFS=$IFSold
+
+### ---------------------------------------------------------------------------------------------------------------------------
+
+
+rm clusters Mfasta bases 
+
+}
+
+function jceegee2
+{
+if [ -d ./jceegee_directorio ]
+then
+ echo -n "jceegee_directorio ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+         y|yes|YES) rm -r jceegee_directorio
+                    jceegee $1 $2;;
+         *)echo "jceegee se ha detenido";;
+esac
+else
+ jceegee $1 $2
+fi
+}
+
+
+#jceegee2 Ncaninum_LIV.Mfasta out.blastp_evalue.mci.I45

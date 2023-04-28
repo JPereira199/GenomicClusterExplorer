@@ -1,0 +1,125 @@
+#!/bin/bash
+
+function data_cl 
+{
+
+## $1 out.mci $2 faa $3 numero maximo de clusters
+  
+mkdir data_directory
+
+
+#Se copian los archivos al directorio de trabajo
+cp $1 $2   ./data_directory
+cd ./data_directory
+
+mv $1 out_mci
+mv $2 faa
+
+
+
+#Se obtiene un columna con el numero de cada cluster, y otra con los genes de cada cluster
+awk 'BEGIN{ OFS="\t"  }  { print NR,  NF }' out_mci > col_num
+sed 's/\t/, /g' out_mci | awk -v max="$3" '(NR<=max){print($0)}'> col_comma
+
+#Otra forma De pasar de Multifasta a fasta sin la necesidad de que tengan el caracter . los finales de linea
+sed 's/>.*/\&&\&/' faa | tr -d "\n" | tr "&" "\n" | sed '/^$/d'  > A
+mv A faa
+
+
+#Variables del bucle
+count=0
+IFSold=$IFS
+IFS=$'\n'
+freno=$(awk 'END{print NR}' col_num)
+echo "El freno es: $freno"
+
+#Obtengo el largo en aminoacidos de cada secuencia
+mkdir largos_directorio
+
+for cluster in $(cat out_mci)
+do
+	IFS=$IFSold
+
+	let count++ ## Indica el numero de cluster
+	
+	number=0
+	for ID in $cluster 
+	do
+
+		let number++
+		grep -A1 "$ID" faa | grep -v "$ID" | awk '{l=length($0)} END{print(l)}' >> "./largos_directorio/largo_$count" 
+		
+	done
+	if (( $count >= $3 )) || (( $count >= $freno ))
+	then
+		break
+	fi
+done
+
+###Calculo media, max y min em aminoacidos de cada cluster
+
+
+cd ./largos_directorio
+
+#echo "Se recorren $count vectores"
+
+for num in $(seq 1 $count)
+do
+	awk 'BEGIN{sum=0}  {sum= sum + $0} END{prom=sum/NR; print(prom)}' "largo_$num" >> ./../largo_prom
+	awk 'BEGIN{max=0} ($0 > max){max=$0} END{print max}' "largo_$num" >> ./../largo_max
+	awk '(NR==1){min=$0} ($0 < min){min=$0} END{print min}' "largo_$num" >> ./../largo_min 
+		
+	
+
+
+done
+
+#Calculo de la desviacion standar en largo de AA para cada cluster
+
+IFS=$'\n'
+num=0
+for prom in $(cat ./../largo_prom)
+do
+
+	IFS=$IFSold
+	let num++
+	
+	awk -v prom=$prom 'BEGIN{ dif=0} {dif=dif + (prom-$0)^2} END{ SD= (dif/NR) ^ (1/2);  print(SD) }' "largo_$num" >> ./../largo_SD 
+
+
+done
+
+
+
+#echo "Moviendose a data_directory"
+cd ./../
+
+#echo "Pegando columnas"
+paste -d "\t" col_num largo_prom largo_max largo_min largo_SD > data_result
+
+
+##Borrando archivos sobrantes
+rm col_comma col_num faa largo_max largo_min largo_prom largo_SD out_mci 
+
+}
+
+function data_cl2
+{
+if [ -d ./data_directory ]
+then
+ echo -n "data_directory ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+         y|yes|YES) rm -r data_directory
+                    data_cl $1 $2 $3 ;;
+         *)echo "cluster_function se ha detenido";;
+esac
+else
+ data_cl $1 $2 $3
+fi
+}
+
+
+
+#data_cl2 out.blastp_evalue.mci.I45 Ncaninum_LIV.faa 150
+

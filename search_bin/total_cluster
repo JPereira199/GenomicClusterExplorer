@@ -1,0 +1,267 @@
+#!/bin/bash
+
+function total_cl
+{
+# $1= out.mci $2 .gff3
+# La funcion devuelve una tabla donde cada linea contiene en que cromosoma se encuentra cada gen
+
+
+
+#Creando un nuevo directorio de trabajo con $1 y $2
+mkdir total_cluster_directorio
+
+cp $1 $2 ./total_cluster_directorio
+cd ./total_cluster_directorio
+#--------------------------------------------------
+
+#Creando los archivos de trabajo tabla y gff
+mv $1 clusters
+mv $2 gff
+
+
+#--------------------------------------------------
+
+#Se cambia el formato URL del gff
+sed -i 's/%2C/,/g' gff  # %2C ,
+sed -i 's/%3B/;/g' gff  # %3B ;
+sed -i 's/%3D/=/g' gff  # %3D =
+#--------------------------------------------------
+
+#Se seleccionan se descartan las anotaciones de AUGUSTUS RATT etc en $2 y se buscan lineas clasificadas como polipeptidos (se cambia la exigencia de que la linea sean mRNA, y no se descartan anotaciones al estilo AUGUSTUS RATT)
+awk '($3=="mRNA" ){print $0}' gff > gff2
+mv gff2 gff
+#--------------------------------------------------
+
+IFSold=$IFS
+IFS=$'\n'
+count=0
+
+#Archivo vacio
+for line in $(cat clusters)
+do
+	
+	let count++	
+	
+	IFS=$IFSold
+	for gen in $line
+	do	
+		### Usado para debugear el programa ### ----------------------	
+		#if (( count==1108  ))	
+		#then
+
+		#echo "Valor de la variable gen: $gen, valor de count2: $count2"
+
+		#fi
+		### ----------------------------------------------------------
+		
+		grep "ID=$gen" gff > gen_ID
+				
+		#Se agrega todos los cromosomas de un mismo cluster en la misma linea
+		awk  '{ printf("%s ", $1 ) }' gen_ID >> cluster_chroms
+		
+			
+	done
+	
+
+	awk 'END{ printf("\n" )}' gff >> cluster_chroms
+
+
+#Pegar columna al archivo vacio
+
+done
+IFS=$IFSold
+
+#rm clusters gff gen_ID
+
+} 
+
+function total_cl2
+{
+if [ -d ./total_cluster_directorio ]
+then
+ echo -n "total_cluster_directorio ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+         y|yes|YES) rm -r total_cluster_directorio
+                    total_cl $1 $2;;
+         *)echo "total_cl se ha detenido";;
+esac
+else
+ total_cl $1 $2
+fi
+}
+
+
+###Linea para obtener todos los cromosomas y contigs sin asignar del .gff
+###awk '{ print $0 }' cluster_chroms | tr " " "\n" | sort  |uniq -c | sort -nr | awk '{OFS=" "}  { printf( "%s \n", $2)}' | sort
+### Transformar strings en vectores
+### Crear un vector de referencia
+### Crear vectores para rellenar
+### Formar una tabla con ellos
+
+function relleno
+{
+
+## Dado un vector de referencia de strings A (p.ej A=(a,b,c,d,e,f)), y un vector cualquiera B
+## ordendado y contenido en A (p.ej: B=[b,c,e] ), rellenar B de forma que B=A.
+## Ademas dado un vector numerico C, con la misma cantidad de elementos de B (p ej. C=(2,3,5)),
+## rellenar con ceros en los mismos espacios que se rellenó B de forma que len(C)=len(A) (pej. C=(0,2,3,0,5,0)).
+
+#$1 A $2 B $3 C
+
+local -n A=$1
+local -n B=$2
+local -n C=$3
+
+count=0
+len_A=$( echo "${#A[@]}" )
+len_B=$( echo "${#B[@]}" )
+
+D=()  ##Error interesante si se quita, en algunas iteraciones del for parece que se olvida del anterior valor de D
+for index in ${!A[@]}
+do
+        D+=(0)
+done
+
+
+for index in ${!A[@]}                  
+do
+        let count++
+        len_B_1=$len_B-1
+        if [[ $count -eq  1  &&  ( ${A[$index]} != ${B[$index]} ) ]]
+        then
+                B=( "${A[$index]}" "${B[@]}"  )      ##{Agrego al inicio}
+                C=( "${D[$index]}" "${C[@]}"  )
+                let len_B++
+
+        elif [[ $index -le $len_B_1  && ( ${A[$index]} != ${B[$index]} ) ]]
+        then
+                B=( "${B[@]:0:$index}" "${A[$index]}" "${B[@]:$index}" )      #{Agrego al medio }
+                C=( "${C[@]:0:$index}" "${D[$index]}" "${C[@]:$index}" )
+                let len_B++
+
+
+        elif [[ $index -eq $len_B_1  &&  $len_B -lt $len_A  &&  ${B[$index]} = ${A[$index]} ]] ## Se cumple F 
+        then                                                                                   ## Recordar  que en [[ str1 = str2 compara igualdad 
+											       ## entre str1 y str2, mientras str1 == str2 equivale
+                B=( "${B[@]}" "${A[@]:$index+1}"  )    ##Agrego el resto del vector A al final de B}
+                C=( "${C[@]}" "${D[@]:$index+1}"  )            
+
+                break
+
+        else                                     ## Revisar linea, recordar que (( se usa para operaciones aritmeticas y [[ para strings
+                                                 ## [[ permite usar strings con espacios como una sola variable, ademas (( y [[ soportan
+                continue                         ## los simbolos && y || como AND y OR
+        fi
+
+done
+
+#echo "${#A[@]} ${#B[@]} ${#C[@]}" #Ejemplo del error interesante
+if [[ ( ${#A[@]} -ne ${#B[@]} ) || ( ${#A[@]} -ne ${#C[@]} )  ]]
+then
+	echo "############################### ERROR DE LINEA #################"
+	echo "Elementos en A: ${#A[@]}"
+	echo "Elementos en B: ${#B[@]}"
+	echo "Elementos en C: ${#C[@]}"
+
+else
+
+	echo ${C[@]} >> cluster_chroms.num
+
+fi
+
+#1Si falta A[0], en B lo agrego al inicio de B
+
+#2Mientras index<len(B)-1  y  A[index]!=B[index]
+#Agrego A[index]=k como B=(B[0:index -1] + K + B[inex:j-1] )  j=len(B)
+
+#3Si A[index]=B[index] y no se cumple F
+#continue
+
+#---------- Condicion de final (F) -------#
+##Sea j=len(B) tq B[j]=A[j], y len(A)=m>j
+#-----------------------------------------#
+#Creo arr2=A[j+1, ..., m] y B=(B+arr2)
+#finalizo el programa
+
+}
+
+
+function relleno2
+{
+## A partir del archivo cluster Chroms creo un vector con los nombres de todos los cromosomas (Incluidos los Nc_unp)
+## Se asume que los nombre de los cromosomas no tienen espacios entre si
+## Se van a descartar aquelloscromosomas con un Nº genes <= $1
+
+#cd ./total_cluster_directorio
+
+### Se crea el array de referencia A
+mystringA=$(awk '{ print $0 }' cluster_chroms | tr " " "\n" | sort  |uniq -c | awk '(NR>1){print $2}')    #Nombres de todos los cromosomas (NR>1 ya que el primer espacio es vacio)
+mystringAnum=$(awk '{ print $0 }' cluster_chroms | tr " " "\n" | sort  |uniq -c | awk '(NR>1){print $1}') #Cantidad total de genes por cromosomas
+myarrayA=( $mystringA) # A
+myarrayAnum=( $mystringAnum) 
+
+
+## Se crea el archivo cluster chroms y se agrega a la primer linea los nombres de todos los cromosomas/contigs
+touch cluster_chroms.num
+echo $mystringA >> cluster_chroms.num 
+
+##Se Crean los Arrays B y C, y, se corre de forma iterada la funcion 'relleno'
+for cluster in $(seq 1 $(awk 'END{print NR}' cluster_chroms)) 
+do
+
+#echo "Numero de Cluster: " $cluster
+mystringB=$(awk -v awk_clust=$cluster '(NR==awk_clust){ print $0 }' cluster_chroms | tr " " "\n" | sort  |uniq -c | awk '(NR>1){print $2}')
+mystringC=$(awk -v awk_clust=$cluster '(NR==awk_clust){ print $0 }' cluster_chroms | tr " " "\n" | sort  |uniq -c |awk '(NR>1){print $1}')
+
+myarrayB=( $mystringB) # B
+myarrayC=( $mystringC) # C
+
+
+relleno myarrayA myarrayB myarrayC 
+
+done
+
+
+##Crear un archivo con mystringA y mystringA.num (cluster_chroms.total)
+touch cluster_chroms.total
+echo $mystringA >> cluster_chroms.total
+echo $mystringAnum >> cluster_chroms.total
+
+##Eliminar las columnas con menos de $1 genes en total
+awk -v A="$mystringAnum" -v min=$1  'BEGIN{ n=split(A, arrA) } { for (column = 1; column <= n; column+=1) if (arrA[column]>=min) printf( "%s ", $column ); print("")  }' cluster_chroms.num > temp1 ## recordar que los array en awk van de 1 a n
+
+## Quedarse solo con las columnas con menos de $1 genes en total
+awk -v A="$mystringAnum" -v min=$1  'BEGIN{ n=split(A, arrA) } { for (column = 1; column <= n; column+=1) if (arrA[column]<min) printf( "%s ", $column ); print("")  }' cluster_chroms.num > temp2 ## recordar que los array en awk van de 1 a n
+
+mv temp1 cluster_chroms.num
+mv temp2 cluster_chroms.descartes
+
+## Descartar las filas sin genes y filas vacias (a excepcion de la primera que son los Chroms), agregar numero de cluster como Index de cada fila      
+awk '(NR==1){print "Index", $0}  (NR>1){total=0; for (column = 1; column <= NF ; column+=1) total+= $column ; if (total>0) printf( "%s %s ", NR-1 ,$0 ); print("")  }' cluster_chroms.descartes | sed '/^$/d' > temp
+mv temp cluster_chroms.descartes 
+
+
+#Crear archivo solo con los descartes con alguno distinto de 0 (arrA[column]<min), agregar indice para identificar los cluster (NR)
+echo ""
+echo "Los siguientes cromosomas/contigs fueron movidos de cluster_chroms.num a cluster_chroms.descartes"
+echo ""
+
+
+touch chroms.descartes
+for i in ${!myarrayAnum[@]}
+do
+	if [[ ${myarrayAnum[$i]} -lt $1  ]]
+	then
+	echo "Cromosoma ${myarrayA[$i]} descartado " >> chroms.descartes
+	echo "${myarrayA[$i]}" 
+	fi
+done
+}
+
+
+
+
+
+#total_cl2 all_mci all_gff
+#relleno2 0 

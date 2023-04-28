@@ -1,0 +1,203 @@
+#!/bin/bash
+
+## Script para crear tablas de datos que luego pueden ser levantadas como DF
+## -Primer columna son los genes de los organismos a trabajar
+## -Segunda columna el número de cluster al cual pertenecen
+## -Tercera tamaño del cluster
+## -Cuarta en adelante, son atributos obtenidos de los archivos con prefijo "atribute_"
+## -Falta incluir un atributo que contenga el nombre del organismo 
+
+
+function df_start {
+
+if [ -d df_dir  ]
+then
+	rm -r df_dir
+fi
+
+mkdir df_dir
+cd ./df_dir
+cp ./../$1 out_mci 
+
+touch col_titles
+
+}
+
+function df_cluster_num {
+
+## Crea una tabla donde asocia a cada gen su numero de cluster
+awk '{ for (i=1; i <= NF ; i++ ) {print( $i "\t" NR "\t" NF) }   }' out_mci > df_clusters
+
+echo "genID" >> col_titles
+echo "clust_num" >> col_titles
+echo "clust_size" >> col_titles
+
+}
+
+function df_cluster_att {
+
+ls ./.. | grep atribute_ > att_files
+
+for file in $( cat  att_files )
+do
+
+cp ./../$file .
+awk 'BEGIN{ FS="\t" } { for (i=1; i <= NF ; i++ ) {print( $i ) }  } ' $file > col_att
+paste -d "\t" df_clusters col_att > A
+mv A df_clusters
+
+echo "$file" | sed 's/atribute_//' >> col_titles 
+
+done
+}
+
+function df_cluster_gc {
+
+########## Whole clusters ##############
+cp ./../crude_results/jceegee_directorio_whole/prom_cg .
+mv prom_cg prom_cg_whole
+
+file_number=$( ls ./../crude_results/jceegee_directorio_whole/clusters_cg/cluster_cg*| wc -l )
+touch col_genes_cg_whole
+for num in $( seq 1 $file_number )
+do
+        cat col_genes_cg_whole ./../crude_results/jceegee_directorio_whole/clusters_cg/cluster_cg_$num > A
+        mv A col_genes_cg_whole
+
+done
+
+awk -v file="prom_cg_whole"  '{genes = NF; getline < file; for (i=1; i <= genes; i++  ) { print $1 }  }' ./../out_mci_whole > col_prom_cg_whole
+awk '{print $1}' col_genes_cg_whole > A
+mv A col_genes_cg_whole
+
+paste -d "\t" df_filtered_whole col_prom_cg_whole col_genes_cg_whole > A
+mv A df_filtered_whole
+
+########## Selected genes ##############
+cp ./../crude_results/jceegee_directorio_selection/prom_cg .
+mv prom_cg prom_cg_selection
+
+file_number=$( ls ./../crude_results/jceegee_directorio_selection/clusters_cg/cluster_cg*| wc -l )
+touch col_genes_cg_selection
+for num in $( seq 1 $file_number )
+do
+	cat col_genes_cg_selection ./../crude_results/jceegee_directorio_selection/clusters_cg/cluster_cg_$num > A
+	mv A col_genes_cg_selection
+
+done 
+
+
+awk -v file="prom_cg_selection"  '{genes = NF; getline < file; for (i=1; i <= genes; i++  ) { print $1 }  }' ./../data_out_mci > col_prom_cg_selection
+awk '{print $1}' col_genes_cg_selection > A
+mv A col_genes_cg_selection
+
+paste -d "\t" df_filtered_selection col_prom_cg_selection col_genes_cg_selection > A
+mv A df_filtered_selection
+
+######## Titulos ####################
+echo "prom_cg" >> col_titles
+echo "genes_cg" >> col_titles
+
+}
+
+function df_longs {
+
+########## Whole clusters ##############
+cd ./../crude_results/data_directory_whole/largos_directorio
+cat $( ls |\
+       	grep largo_ |\
+       	sed "s/_/ /g"  |\
+       	sort -k2 -g  |\
+       	sed "s/ /_/" ) > ./../../../df_dir/col_genes_longs_whole
+cd ./../../../df_dir
+
+cp ./../crude_results/data_directory_whole/data_result .
+mv data_result  prom_longs_whole
+awk -v file="prom_longs_whole"  '{genes = NF; getline < file; for (i=1; i <= genes; i++  ) { print $3 }  }' ./../out_mci_whole > col_prom_longs_whole
+
+paste -d "\t" df_filtered_whole col_prom_longs_whole col_genes_longs_whole > A
+mv A df_filtered_whole
+
+########## Selected genes ##############
+cp ./../crude_results/data_directory_selection/data_result .
+mv data_result prom_longs_selection
+
+cd ./../crude_results/data_directory_selection/largos_directorio
+cat $( ls |\
+       	grep largo_  |\
+	sed "s/_/ /g"  |\
+       	sort -k2 -g  |\
+       	sed "s/ /_/" ) > ./../../../df_dir/col_genes_longs_selection
+cd ./../../../df_dir
+
+awk -v file="prom_longs_selection"  '{genes = NF; getline < file; for (i=1; i <= genes; i++  ) { print $3 }  }' ./../data_out_mci > col_prom_longs_selection
+
+paste -d "\t" df_filtered_selection col_prom_longs_selection col_genes_longs_selection > A
+mv A df_filtered_selection
+
+######## Titulos ####################
+echo "prom_longs" >> col_titles
+echo "genes_longs" >> col_titles
+
+}
+
+
+function df_filter {
+
+## $1 cluster file out_mci
+## $2 tab_file
+## $3 output df name
+
+cp ./../$1 .
+
+tr "\n" "\t" < $1 > regexp_file1
+
+## Creo una Regexp para seleccionar los genes que esten la primer columna
+sed -i 's/^\t\|\t$//g' regexp_file1 	## Quito los tab al inicio y fianal de outmci
+sed -i 's!\t!\|\^!g' regexp_file1	## Cambio los \t  por |^
+sed -i 's!^!\^!' regexp_file1		## Agrego un ^ en la primer line
+
+
+regexp_var1=$(cat regexp_file1)
+egrep "$regexp_var1" $2 > $3
+
+}
+
+function df_titles {
+
+## $1 output df_name 
+
+tr "\n" "\t" < col_titles > A
+mv A col_titles
+
+#Se agrega un \n al final de la linea
+sed -i 's/\t$/\n/' col_titles
+
+cat col_titles $1 > A 
+mv A $1
+}
+
+function master_df {
+## Se inicia trabajando con todos los clusters
+## luego se filtran con los genes perteneciente a 
+## data_out_mci y out_mci_whole
+
+df_start $1
+## Numero de cluster para cada gen
+df_cluster_num
+## Atributos de cada gen
+df_cluster_att
+## Filtrado de las tablas con genes de interes
+df_filter $2 df_clusters "df_filtered_selection"
+df_filter $3 df_clusters "df_filtered_whole"
+## Contenido de cg para cada cluster y cada gen, para whole y selection
+df_cluster_gc 
+## Largo en AA para cada cluster y cada gen, para whole y selection 
+df_longs
+## Se agregan los nombres de las columnas
+df_titles "df_filtered_selection"
+df_titles "df_filtered_whole"
+
+}
+
+#master_df out_mci data_out_mci out_mci_whole

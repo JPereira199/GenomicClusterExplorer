@@ -1,0 +1,30 @@
+#!/bin/bash
+
+## $1 cluster file out_mci
+function abc_filter_func 
+{
+tr "\n" "\t" < $1 > regexp_file1
+
+sed -i 's/^\t\|\t$//g' regexp_file1
+sed -i 's!\t!\|\^!g' regexp_file1
+sed -i 's!^!\^!' regexp_file1
+
+
+regexp_var1=$(cat regexp_file1)
+egrep "$regexp_var1" blastp_evalue.abc > evalue_filter1
+
+#echo "El valor de regexp_var1 es:" $regexp_var1
+#echo "wc evalues_filter1"
+#wc evalue_filter1
+
+sed 's!\^!\\t!g' regexp_file1 > regexp_file2
+regexp_var2=$(cat regexp_file2)
+
+grep -P "$regexp_var2" evalue_filter1 > evalue_filter2
+
+#echo "El valor de regexp_var2 es:" $regexp_var2
+
+echo "wc evalue_filter2"
+wc evalue_filter2
+}
+
