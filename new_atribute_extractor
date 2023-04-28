@@ -1,0 +1,52 @@
+#!/bin/bash
+function atribute_extractor
+{
+echo "Initializing atribute extractor..."
+
+IFS_old=$IFS
+IFS=$'\n'
+for cluster in $(cat out_mci)
+do
+        IFS=$'\t'
+        for ID in $cluster
+        do
+
+                for atr in ${atr_vect[@]}
+                do
+
+
+
+                        grep "ID=$ID"  ./gff | tr "\n" ";" | awk -v atribute="$atr"  'BEGIN{ bool="FALSE"; RS=";"}   ( $0 ~ atribute ){if (bool=="FALSE") {print ($0); bool="TRUE"} }  END{if (bool=="FALSE") {print("-----") }}'  | sed 's/\t//g'  | sed "s/.*=//" >> atribute_"$atr"
+                        ##En el ultimo pipe se cambia sed "s/$atr=//" por sed 's/.*=//'
+                done
+
+        done
+
+        ####Se agrega un tag marcando el final de cada cluster
+        for atr in ${atr_vect[@]}
+        do
+
+                echo "&tag&" >> atribute_$atr
+
+        done
+
+done
+IFS=$IFS_old
+
+
+
+## Se pone un cluster por linea
+for atr in ${atr_vect[@]}
+do
+
+        tr "\n" "\t" < atribute_$atr > A
+        mv A atribute_$atr
+        sed -i 's/\&tag\&/\n/g' atribute_$atr
+
+        ## Esta linea quita los campos vacios que se cran al cambiar &tag& por \n
+        sed -i 's/^\t\|\t$//g' atribute_$atr
+
+done
+
+}
+

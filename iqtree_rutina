@@ -1,0 +1,83 @@
+#!/bin/bash
+
+##Emplea los archivos encontrados en las carpetas alings.faa y alings.fastpara crear filogenias mediante el programa iqtree. Las carpetas alings.faa y aligns.fasta son producto del programa ./mafft_rutina
+
+## La carpeta mafft_directorio se debe encontrar en la misma ubicacion que el programa 
+
+## Pordefecto la rutina iq tree solo va a trabajar  con los archivos de la carpeta alings.faa
+
+function iqtree_bucle
+{
+
+mkdir iqtree_directorio2
+mkdir iqtree_directorio2/trees_faa
+#mkdir iqtree_directorio/trees_fasta
+
+
+cp ./mafft_iqtree_bin/iqtree ./iqtree_directorio2
+cp -r ./mafft_directorio2/alings_faa ./iqtree_directorio2/trees_faa
+#cp -r ./mafft_directorio2/alings_fasta ./iqtree_directorio2/trees_fasta
+
+cd ./iqtree_directorio2
+
+#### Bucle sobre los archivos en alings_faa #### ---------------------------------------
+
+cp iqtree ./trees_faa
+cd ./trees_faa
+for cluster in $(ls ./alings_faa )
+do
+	
+	echo  "Creando arbol de AA  con el cluster: $cluster"
+#	./iqtree -s  "./alings_faa/$cluster" -alrt 5000 -bb 5000 -nt AUTO -quiet  ##-fast	
+	./iqtree -s  "./alings_faa/$cluster" -nt AUTO -quiet  ##-fast
+
+	mkdir ./result."$cluster"
+	cp ./alings_faa/"$cluster"* "./result.$cluster"	           #Copio todos los resultado (incluido el mafft aling) a la carpeta de resultados
+	#cp ./alings_faa/"$cluster" "./result.$cluster"'.iqtree' . #Se deja el aling y junto un archivo iqtree en la carpeta general
+	rm ./alings_faa/"$cluster"'.'*                             #Remuevo los archivos de salida de iqtree de la carpeta
+
+
+done
+rm iqtree
+cd ./..
+#### ------------------------------------------------------------------------------------
+
+
+#### Bucle sobre los archivos alings_fasta #### -----------------------------------------
+
+#cp iqtree ./trees_fasta
+#cd ./trees_fasta
+#for cluster in $(ls ./alings_fasta)
+#do
+
+#	echo  "Creando arbol de DNA con el cluster: $cluster"
+        #./iqtree -s  "./alings_fasta/$cluster" -nt AUTO -quiet  ##-fast
+                
+        #mkdir ./result."$cluster"
+        #cp ./alings_fasta/"$cluster"* "./result.$cluster"            #Copio todos los resultado (incluido el mafft aling) a la carpeta de resultados
+        #cp ./alings_fasta/"$cluster" "./result.$cluster"'.iqtree' . #Se deja el aling y junto un archivo iqtree en la carpeta general
+        #rm ./alings_fasta/"$cluster"'.'*			     #Remuevo los archivos de salida de iqtree de la carpeta
+	
+
+#done
+#rm iqtree
+#### --------------------------------------------------------------------------------------
+}
+
+function iqtree_bucle2
+{
+if [ -d ./iqtree_directorio2 ]
+then
+ echo -n "iqtree_directorio2 ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+         y|yes|YES) rm -r iqtree_directorio2
+                    iqtree_bucle;;
+         *)echo "iqtree_bucle se ha detenido";;
+esac
+else
+ iqtree_bucle 
+fi
+}
+
+#iqtree_bucle2

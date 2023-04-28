@@ -1,0 +1,65 @@
+#!/bin/bash
+
+function mafft_work
+{
+# $1 out_mci
+# $2 Mfaa
+## Debe estar la funcion my.Psplit.pl en la misma carpeta que mafft_work
+## La herramienta de alinemiento mafft debe de estar instalada previamente
+
+mkdir mafft_directorio2
+
+cp ./mafft_iqtree_bin/myPsplit.pl ./mafft_directorio2/
+
+cd ./mafft_directorio2
+
+cp ./../$1 mci
+cp ./../$2 Mfaa
+
+#local -n vector=$1
+
+mkdir ./alings_faa
+
+IFS_old=$IFS
+IFS=$'\n'
+num=0
+for cluster in $(cat mci)
+do	
+	let num++
+        echo "Cluster Nº: $num"
+        echo $cluster > cluster_file1
+	#awk -v line=$cluster '(NR==line){ print $0 }' mci > cluster_file
+        
+        tr "\t" "\n" < cluster_file1 > cluster_file2
+       
+        ./myPsplit.pl Mfaa cluster_file2 split.faa
+        mafft split.faa > "./alings_faa/mafft_cluster_$num"
+
+done
+IFS=$IFS_old
+
+}
+
+function mafft_work2
+{
+if [ -d ./mafft_directorio2 ]
+then
+ echo -n "mafft_directorio2 ya existe, desea removerlo? (y|n): "
+ read input
+ case $input in
+         y|yes|YES) rm -r mafft_directorio2
+                    #mafft_work $1 $2 $3 $4;;
+		    mafft_work $1 $2;;
+         *)echo "mafft_work se ha detenido";;
+esac
+else
+ #mafft_work $1 $2 $3 $4
+ mafft_work $1 $2
+fi
+}
+
+#my_clusters=(26 13 33 28 22 15 8 7 )
+
+#mafft_work2 SRS_whole.mci.oneline Full_TgNc.Mfasta
+
+             

@@ -1,0 +1,109 @@
+#!/bin/bash
+
+function extract_search {
+
+## $1 gff $2 out_mci $3 "atr_string" or file
+source  ./feature_extractor_test
+
+master_feature_extractor $1 $2 "$3"
+cd ..
+
+#master_feature_extractor Ncaninum_LIV.gff3 out.blastp_evalue.mci.I45 "product ortholog_cluster"
+
+## $1 gff $4 faa $5 Mfasta $6 "search Regexp"
+source ./cluster_search
+
+master_function $1 $4 $5 "$6"
+cd ..
+
+#master_function Ncaninum_LIV.gff3 Ncaninum_LIV.faa Ncaninum_LIV.Mfasta "SRS|srs|SAG"
+
+}
+
+function master_input2 {
+
+## Tamaño minimo de los cluster seleccionados y enteros
+## a tomar en cuenta al realizar la busqueda
+min_whole=""
+min_selection=""
+function usage()
+{
+
+#Solo se han implementado las opciones -s y -w
+echo "Usage: cluster_search [-r | --min-representation FLOAT ]
+			    [-s | --min-selection INT ]
+                            [-w | --min-whole INT]
+                            [-a | --faa FILE]
+                            [-g | --gff FILE]
+                            [-f | --fasta FILE]
+                            X[-S | --search REGEXP]
+			    [-P | --plot ]
+			    [-S | --susbstitute]
+			    [-R | --replace]"
+exit 2
+
+}
+## -a: Modo alternativo. Permite opciones largas con un solo guion (-)
+## -n: Indica a getopt el nombre del programa en ejecucion. Usado al momento de  devolver errores
+PARSED_ARGUMENTS=$( getopt -a -n cluster_search -o w:s:r:P:R:S: --long min-whole:,min-selection:,min-representation:,plot,replace:,substitute: -- "$@" )
+VALID_ARGUMENTS=$?
+
+if [ "$VALID_ARGUMENTS" != "0"  ]; then
+        usage
+fi
+
+echo "PARSED_ARGUMENTS is $PARSED_ARGUMENTS"
+eval set -- "$PARSED_ARGUMENTS"
+
+while :
+do
+        case "$1" in
+                -s | --min-selection) min_selection="$2" ; shift 2;;
+                -w | --min-whole) min_whole="$2" ; shift 2;;
+		-r | --min-representation) min_representation="$2"; shift 2;;
+		-P | --plot) plot="TRUE"; shift 1;;
+		-R | --replace) fusion="TRUE"; rem="$2"; shift 2;;
+		-S | --substitute) fusion="TRUE"; sub="$2"; shift 2;;	
+                --) shift 1; break ;;
+                *) echo "Unexpected option: $1"; usage
+        esac
+done
+
+echo "Final arguments: $@"
+echo "Min selection value: $min_selection"
+echo "Min whole value: $min_whole"
+echo "Min representation value: $min_representation"
+
+################ Ejecutando el resto del Script ###############
+extract_search "$@"
+
+}
+
+#cp mcl_blastp_directorio/blastp_evalue.abc . 
+
+#master_input2 --plot Full_TgNc.gff Full_TgNc.mci "product description Name Org_name" Full_TgNc.faa Full_TgNc.Mfasta "SRS|srs|SAG"; cd .. ; mv searcher_dir searcher_SRS 
+
+
+#master_input2 --plot Full_TgNc.gff Full_TgNc.mci "product description Name Org_name" Full_TgNc.faa Full_TgNc.Mfasta "ROP|rhoptr|Rhoptr"; cd .. ; mv searcher_dir searcher_ROP 
+
+#master_input2 --plot Full_TgNc.gff Full_TgNc.mci "product description Name Org_name" Full_TgNc.faa Full_TgNc.Mfasta "GRA|granular|granule"; cd .. ; mv searcher_dir searcher_GRA 
+
+#master_input2 --plot Full_TgNc.gff Full_TgNc.mci "product description Name Org_name" Full_TgNc.faa Full_TgNc.Mfasta "MIC|micronem|Micronem" ; cd .. ; mv searcher_dir searcher_MIC 
+
+
+#cp mcl_blastp_GRA/blastp_evalue.abc . ; master_input2 --plot ./refeed_inputs/refeed_dir_GRA/all_gff ./mcl_blastp_GRA/out.blastp_evalue.mci.I45 "product description Name Org_name" ./refeed_inputs/refeed_dir_GRA/all_faa ./refeed_inputs/refeed_dir_GRA/all_Mfasta "GRA|granule|granular|Granul"; cd .. ; mv searcher_dir searcher_GRA 
+
+#master_input2 --plot all_gff out.blastp_evalue.mci.I45 "product description Name"  all_faa all_Mfasta "SRS|SAG|srs"
+
+#cp mcl_blastp_MIC/blastp_evalue.abc . ; master_input2 --plot ./refeed_inputs/refeed_dir_MIC/all_gff ./mcl_blastp_MIC/out.blastp_evalue.mci.I45 "product description Name Org_name" ./refeed_inputs/refeed_dir_MIC/all_faa ./refeed_inputs/refeed_dir_MIC/all_Mfasta "MIC|microneme|Microneme"; cd .. ; mv searcher_dir searcher_MIC 
+
+#master_input2 --plot TgondiiME49.gff out.blastp_evalue.mci.I45 "description Name"  TgondiiME49_Genome.faa TgondiiME49.Mfasta "granule|granular|GRA"
+
+#master_input2 --plot TgondiiME49.gff out.blastp_evalue.mci.I45 "description Name"  TgondiiME49_Genome.faa TgondiiME49.Mfasta "SRS|srs|SAG"
+
+#master_input2 --plot TgondiiME49.gff out.blastp_evalue.mci.I45 "description Name"  TgondiiME49_Genome.faa TgondiiME49.Mfasta "MIC|microneme|Microneme"
+
+#master_input2  all_gff out.blastp_evalue.mci.I45 --plot "product Org_name description Parent" all_faa all_Mfasta "SRS|srs|SAG"
+
+#master_input2  all_gff out.blastp_evalue.mci.I45 --plot -R "Name" -S "product" "product" all_faa all_Mfasta "SRS|srs|SAG"
+

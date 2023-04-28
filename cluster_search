@@ -1,0 +1,838 @@
+#!/bin/bash
+
+## Inputs:
+##  Regex de usuario  (Ej: "SRS")
+##  Seleccion del  atributo sobre el cual relizar la busqueda (signature_desc, product, etc) [opcional( -a|--all, -t|--atributes    ), en caso de no ser sumistrado se hace la busqueda sobre todos los archivos producidos por atribute_module]
+##  Archivos con datos extraidos [ opcional si se corre en conjunto con atribute_module, (-d|--directory, -f|--files)]
+
+## Objetivos del script:
+##  Realizar una busqueda en los datos obtenidos, el cual contenga:
+##
+##   -Cantidad de resultados por cluster (y porcentaje del total de genes que 
+##    coinciden),  ¿discriminar por resultados identicos?
+##
+##   -Genes de cada cluster identificados y  datos asociado a cada gen
+##   -Opcion para mostrar genes que no fueron identicados en cada cluster junto con sus
+##    datos asociados
+##
+##   -Mostrar histogramas asocidos a cada cluster, donde se distingan: histograma total 
+##    junto con  histogramas de resultados total; y posiblemente histograma (o barplot?)
+##    compuesto por los distintos resultados (Resultado A + Resultado B + No resultado )
+##
+##   -Seleccion de cada cluster para su posterior alineamiento  segun: Cantidad de 
+##    resultados (total o porcentaje). Opcion para descartar genes que no coinciden con 
+##    el resultado 
+
+
+
+#### 
+#### Dado out_mci y att_file -tambien el att_chrom, largos_cluster, cg_cluster -
+
+function searcher_start
+{
+
+	if [ -d searcher_dir ]
+	then
+		rm -r searcher_dir
+	fi
+
+mkdir searcher_dir
+
+cp ./feature_dir/out_mci ./feature_dir/atribute_* ./searcher_dir
+cd ./searcher_dir
+
+
+}
+
+
+#### -Les Cambio el \n por &tag& y el FS por \n  (quizas tambien agregar un &tag& al inicio para que el 
+####  numero de tags coincidan con el numero del cluster (asegurarse de que no hayan /n al final del archivo))
+####Los pego por columnas
+
+function grid_maker
+{
+	
+	ls out_mci > file_list1
+	ls atribute_* >> file_list1
+	#paste -d " " file file_list > A
+	#mv A file_list; rm file 
+
+	touch grid
+	for atr_file in $(cat file_list1)
+	do
+		
+		awk 'BEGIN{ FS="\t" }  {for ( i=1; i<=NF; i++ )	{print $(i)} } 
+		{print "&tag&" } ' $atr_file > column_"$atr_file" 
+		
+		paste  grid column_"$atr_file" > A
+		mv A grid	
+		#tr "\n" "&tag&"  < $atr_file > "$atr_file"_column 
+		#tr "\t" "\n"     < "$atr_file"_column > A
+
+	done
+
+	#Se quita la primer columna vacia
+	sed -i 's/^\t//' grid
+
+	#Descarto los &tag& de la ultima fila
+	head -n -1 grid > A
+	mv A grid
+	
+	#Se remueven todos los archivos column_
+	rm column_*
+}
+
+
+
+#### -grep "regex|&tag&" > data_file  para quedarme solo con las files que tienen coincencias y los tags
+function grid_maker2
+{
+
+	egrep "$1|&tag&" grid > data_file
+	egrep -v "$1" grid > comp_data_file
+	
+	grep -v "&tag&" data_file > data_file_test.tmp
+
+	if [ ! -s  data_file_test.tmp ]
+	then
+		rm data_file_test.tmp
+		echo "ERROR: No se encontraron atributos que coincidan con el query"
+		echo "dado por el usario"
+		echo ""
+		echo "Finalizando programa"
+		exit 2
+	fi
+	rm data_file_test.tmp
+}
+
+####  -Separo las columnas de  data_file  en archivos (data_att1, data_att2, data_chrom, data_cg, etc)
+#La primer columna debe ser siempre out_mci, el nombre de cada columna va a estar dado por el archivo file_list
+function data_file_maker
+{
+	
+	echo "Ejecutando Data file maker"
+
+	sed 's/atribute_//' file_list1 > file_list2
+	
+	column=0
+	for file_name in $(cat file_list2)
+	do
+		## Separo las columnas en archivos
+		let column++
+		awk -v col=$column 'BEGIN{FS="\t"} {print $(col)}' data_file > tag_data_$file_name
+		awk -v col=$column 'BEGIN{FS="\t"} {print $(col)}' comp_data_file > tag_comp_data_$file_name
+		
+		## Cambio los arcivos al formato 'cluster'
+		tr "\n" "\t" < tag_data_$file_name | awk 'BEGIN{ RS="&tag&" }  {print $0}' > bd_$file_name.tmp
+		tr "\n" "\t" < tag_comp_data_$file_name | awk 'BEGIN{ RS="&tag&" }  {print $0}' > comp_bd_$file_name.tmp
+
+
+		## Se quitan los tabuladores al inicio y final de cada linea
+		sed -i 's/^\t\|\t$//g' bd_"$file_name".tmp
+		sed -i 's/^\t\|\t$//g' comp_bd_"$file_name".tmp
+
+		## Se borran lineas vacias
+		sed -i '/^$/d' bd_"$file_name".tmp
+		#sed -i '/^$/d' comp_bd_"$file_name".tmp  
+		## En el complemento no se borran ya que se usan para indicar la posicion de cada cluster
+		
+	done
+	
+	## Obtengo los indices de cada cluster (se imprimen todas las lineas no vacias) 
+	tr "\n" "\t" < tag_data_out_mci | awk  'BEGIN{ RS="&tag&"} NF {print NR}' > data_index
+	
+	## Selecciono los cluster complementarios con el mismo indice que los no complementarios
+	str_index=$(tr "\n" "," < data_index) #Por alguna razon no funciona $(cat data index) ¿sobra algun \n? 
+	for file in $(cat file_list2)
+	do
+		#echo "File name: "$file
+		awk -v str_index="$str_index" 'BEGIN{RS="\n"; split(str_index, indx, ","  ); i=1 } (NR==indx[i]){print; i+=1 }' comp_bd_"$file".tmp > A.$file
+		mv A.$file comp_bd_"$file".tmp
+	#	tr "\n" "\t" < tag_comp_data_out_mci | awk  'BEGIN{ RS="&tag&"} NF {print NR}' > data_index_comp
+	done
+	
+	## De aquellos cluster complementarios que coinciden con data_index, uso el indice de las lineas no vacias
+	str_index=$(cat data_index)
+	awk -v str_index="$str_index" 'BEGIN{ split(str_index, indx, "\n"); i=1} ( NF ){print indx[i]} {i+=1}' comp_bd_out_mci.tmp > data_index_comp
+
+	#Se remueven todos los tag_data_file
+	#rm tag_* 
+	
+	## Se cambia el nombre del archivo para evitar errores mas adelante
+	mv bd_out_mci.tmp data_out_mci
+	mv comp_bd_out_mci.tmp comp_data_out_mci
+
+
+}
+
+
+
+####  -Analizo cualquiera de los data_out_mci con AWK, imprimo una lista de NR para filas no vacias
+####  awk 'BEGIN{ RS="&tag&"  } ($0 ~ regex ){print NR-1}  ($0 ~! regex)( print "")  ' data_{name} > data_indice
+####  #Data_indice va a contener lineas vacias en los lugares que no hayan coincidencias y el indice en las que sí.
+############################################################################
+#### -Pego data_indice a mci_out  (indice_mci_out), me quedo solo con las filas que tengan indices awk '( $1 == RN  ){ print $1, NF-1 }' indice_out_mci > selection_out_mci 
+#### -El archivo selection_out_mci contiene los clusters donde hay una o mas coincidencias   
+####
+#### -Obtengo el NF de cada cluster con awk '{print NF}' selection_out_mci 
+########################################################################
+
+
+## Para cada cluster se obtiene un lista con los genes seleccionados
+## y otra todos los genes. 
+## Luego se calcula Nº genes seleccionado/Nª genes totales 
+## Inputs: out_mci, data_out_mci (lista de genes seleccionados)
+## Outputs: out_mci_whole, gene_number
+function data_out_mci_analizer
+{
+	
+	echo "Ejecutando data out_mci analizer"
+	##Despues probar pegando data_index a out_mci y usando $1!=""
+	
+	head="gene_number_head"
+	whole="gene_number_whole"
+	selection="gene_number_selection"
+	difference="gene_number_difference"
+	output="final_gene_number"
+
+
+	echo "Nº genes" > $head
+
+	for index in $( cat data_index )
+	do
+		awk -v ind=$index '(NR==ind){ print NF }' out_mci >> $whole
+		##Mover a otro lugar
+		awk -v ind=$index '(NR==ind){ print }' out_mci >> out_mci_whole	
+
+	done	
+	
+	awk '{print NF}' data_out_mci  > $selection
+	paste -d "\t" $whole $selection > gene_number.tmp
+		
+	awk '{ div=$2/$1   ; printf( "%.4g\n", div ) }' gene_number.tmp > $difference
+	
+	paste -d \\n $whole $selection $difference > $output.tmp
+
+	rm gene_number.tmp
+
+}
+
+#### -Analizar independientemente cada data_{name}:
+####     Pegarlas a resultado resumen
+
+function functions_reuse_starter
+{
+	## $1 gff,  $2 .faa, $3 .Mfasta
+	echo	"Ejecutando functions reuse starter"
+	mkdir crude_results
+	cp ./../search_bin/* out_mci_whole comp_data_out_mci data_out_mci ./crude_results
+	
+	cd ./crude_results
+	#Agregar un parametro para nombrar el directorio
+
+	cp ./../../$1 gff
+	cp ./../../$2 faa
+        cp ./../../$3 Mfasta 
+
+}
+
+function total_cluster_reuse {
+
+
+	echo "Ejecutando total_cluster"	
+	source total_cluster
+	
+	total_cl2 out_mci_whole gff >> output.log
+	relleno2 0 >> output.log
+	cd ..
+	mv total_cluster_directorio total_cluster_directorio_whole 
+	
+	total_cl2 data_out_mci gff >> output.log
+	relleno2 0 >> output.log
+	## Se parsea el archivo para poder ser usado por body_ensambler
+	sed -i 's/ $//' cluster_chroms
+	tr " " "\t" < cluster_chroms > ./../../bd_cluster_chroms.tmp 
+	
+	cd .. 
+	mv total_cluster_directorio total_cluster_directorio_selection
+	
+	total_cl2 comp_data_out_mci gff  >> output.log
+	relleno2 0 >> output.log
+	## Se parsea el archivo para poder ser usado por body_ensambler
+	sed -i 's/ $//' cluster_chroms
+	tr " " "\t" < cluster_chroms > ./../../comp_bd_cluster_chroms.tmp
+	
+	cd ..
+	mv total_cluster_directorio total_cluster_directorio_comp
+
+}
+
+
+
+
+function data_cl2_reuse {
+
+#################  EJECUCION DE DATA_CL2   ###############
+	
+	echo "Ejecutando data_cl2"
+        source data_cl2
+
+        data_cl2 out_mci_whole faa 9999 >> output.log
+        cd ..
+        mv data_directory data_directory_whole
+
+        data_cl2 data_out_mci faa 9999 >> output.log
+        cd ..
+        mv data_directory data_directory_selection
+
+
+###################  PARSEO DE LOS DATOS  ################
+
+
+
+## Variables con los nombres de los archivos 
+	
+	head="head_names_data_cl2"
+	whole="head_results_data_cl2_whole"
+	selection="head_results_data_cl2_selection"
+	diff="head_results_data_cl2_diference"
+	output="final_head_data_cl2"
+
+## Creacion del encabezado
+	echo "Largo Prom.	max	min	SD" > $head
+	
+
+## Parseo de los datos totales  y seleccionados
+	
+	awk 'BEGIN{ OFS="\t"  } { print $3,$4,$5,$6 }' ./data_directory_whole/data_result > $whole
+
+	awk 'BEGIN{ OFS="\t"  } { print $3,$4,$5,$6 }' ./data_directory_selection/data_result > $selection
+	
+
+
+
+## Obtencion de la diferencia entre los datos totales y seleccionados
+	
+		awk -v head=$head -v file1=$whole -v file2=$selection  'FILENAME==head{ for (i=1; i<=NF; i++) 
+		{ vect[i]=$i  }} 
+		
+		FILENAME==file1{ for (i=1; i<=NF; i++) 
+		{ vect2[FNR,i]=$i  }}
+		
+		FILENAME==file2{ for (i=1; i<=NF; i++)
+		{ vect3[FNR,i]=$i  }} 
+		
+		END{ for (x=1; x<=FNR; x++) 
+		{ for (y=1; y<=NF; y++)
+			{ printf( "%g\t", vect3[x,y] - vect2[x,y] ) }
+		; printf("\n") }}' $head $whole $selection > $diff
+
+	#Se quita el ultimo tab para evitar errores
+	sed -i 's/\t$//' $diff	
+
+################### CREACION DEL ENCABEZADO DE SALIDA #####################
+
+        head_str=$(cat $head)
+        clust_nums=$(cat ./../data_index) ##Ubicar archivo
+        paste -d \\n $whole $selection $diff | sed '/^$/d' > "$output".tmp
+
+       # awk -v num="$clust_nums" -v head="$head_str" 'BEGIN{ split(num, arr, "\n")}     (NR%3 == 1 || NR==1 ){ printf ("#####\nCluster %i\n%s\n", arr[(NR + 2)/3], head)   } {print$0}' "$output".tmp > $output
+        #rm "$output".tmp
+
+
+}
+
+function ceegee_juaco_reuse {
+
+############### EJECUCION DE CEEGEE_JUACO ################
+
+	echo "Ejecutando ceegee_juaco"
+	source ceegee_juaco
+	
+	jceegee2 Mfasta  out_mci_whole >> output.log
+	cd ..
+	mv jceegee_directorio jceegee_directorio_whole
+	
+	jceegee2 Mfasta  data_out_mci >> output.log
+	cd ..
+	mv jceegee_directorio jceegee_directorio_selection
+
+
+###################  PARSEO DE LOS DATOS  ################
+
+## Variables con los nombres de los archivos 
+
+        head="head_names_ceegee_juaco"
+        whole="head_results_ceegee_juaco_whole"
+        selection="head_results_ceegee_juaco_selection"
+        diff="head_results_ceegee_juaco_diference"
+	output="final_head_cg"
+
+## Creacion del encabezado
+
+        echo "CG Prom.	min	max	SD" > $head
+
+## Parseo de los datos totales  y seleccionados
+
+	cd ./jceegee_directorio_whole
+	sed -i 's/ /\t/g' min_max_cg
+	paste -d "\t" prom_cg min_max_cg sd_cg > ./../$whole
+	cd ..
+
+	cd ./jceegee_directorio_selection
+	sed -i 's/ /\t/g' min_max_cg
+	paste -d "\t" prom_cg min_max_cg sd_cg > ./../$selection
+	cd ..
+
+
+
+
+## Obtencion de la diferencia entre los datos totales y seleccionados
+        
+	awk -v head=$head -v file1=$whole -v file2=$selection  'FILENAME==head{ for (i=1; i<=NF; i++) 
+                { vect[i]=$i  }} 
+                
+                FILENAME==file1{ for (i=1; i<=NF; i++) 
+                { vect2[FNR,i]=$i  }}
+                
+                FILENAME==file2{ for (i=1; i<=NF; i++)
+                { vect3[FNR,i]=$i  }} 
+                
+                END{ for (x=1; x<=FNR; x++) 
+                { for (y=1; y<=NF; y++)
+                        { printf( "%g\t", vect3[x,y] - vect2[x,y] ) }
+                ; printf("\n") }}' $head $whole $selection > $diff
+	
+	#Se quita el ultimo tab para evitar errores
+        sed -i 's/\t$//' $diff
+
+################### CREACION DEL ENCABEZADO DE SALIDA #####################
+
+	head_str=$(cat $head)
+	#clust_nums=$(cat ./../data_index) 
+	paste -d \\n $whole $selection $diff | sed '/^$/d' > "$output".tmp
+
+	#awk -v num="$clust_nums" -v head="$head_str" 'BEGIN{ split(num, arr, "\n")}     (NR%3 == 1 || NR==1 ){ printf ("#####\nCluster %i\n%s\n", arr[(NR + 2)/3], head)   } {print$0}' "$output".tmp > $output
+	#rm "$output".tmp
+
+}
+
+
+function head_maker {
+
+echo "ejecutando head_maker"
+
+output_head="final"
+head="final2"
+
+## Debe coincidir con $output y head de gene_number
+head0="gene_number_head"
+output0="final_gene_number"
+
+## Debe coincidir con $output y head de reuse_data_cl
+head1="head_names_data_cl2"
+output1="final_head_data_cl2"
+
+## Debe coincidir con $output y head  de reuse_ceegee
+head2="head_names_ceegee_juaco"
+output2="final_head_cg"
+
+#echo La variable head vale: "$head"
+
+paste -d "\t" ./../"$head0" "$head1" "$head2"  > "$head".tmp
+paste -d "\t" ./../"$output0".tmp "$output1".tmp "$output2".tmp  > "$output_head".tmp
+
+
+awk 'BEGIN{ FS="\t" }  {split($0, arr, "\t" ); for (i=1; i<=NF; i++) { printf( "%-11s"  ), arr[i] } } ' "$head".tmp > A
+mv A "$head".tmp
+
+awk 'BEGIN{ FS="\t" }  {split($0, arr, "\t" ); for (i=1; i<=NF; i++) { printf( "%-11s"  ), arr[i] }; print("") } ' "$output_head".tmp > A
+mv A "$output_head".tmp
+
+head_str=$(cat "$head".tmp  )
+clust_nums=$(cat ./../data_index)
+
+awk -v num="$clust_nums" -v head="$head_str" 'BEGIN{ split(num, arr, "\n")}     (NR%3 == 1 || NR==1 ){ print("###Cluster Sep###"); print("--------------------------------------------------------------------"); printf("Cluster %i\n%s\n", arr[(NR + 2)/3], head)   } {print$0}' "$output_head".tmp > head_"$output_head"
+        #rm "$output_head".tmp "$head".tmp
+
+cd .. ## SE SALE DE CRUDE_RESULTS PARA QUE BODY_ENSAMBLEER PUEDA FUNCIONAR
+
+}
+
+
+
+function body_ensambler
+{
+echo "Ejecutando body_ensambler"
+
+output_body="final"
+
+IFS_old=$IFS
+IFS=$'\n'
+ls bd_* > file_list3 
+
+# # Se junta los datos seleccionados con su complemento
+# for file in $(cat file_list)
+# do
+# 	paste -d "\t\t" "$file" "comp_$file" > A
+# 	mv A "$file"
+# done
+
+
+declare -a index_arr
+declare -a index_arr_comp
+
+index_arr=(`cat data_index`)
+index_arr_comp=(`cat data_index_comp`)
+
+
+## Cada archivo contiene un tipo distinto de atributo para cada cluster (Ej. product, ortholog_family)
+for file in $(cat file_list3)
+do
+	## Cada linea es un cluster
+	indx=-1
+	indxc=0
+	for line in $(cat $file) 
+	do	
+		
+		echo "###BODYSEP###" >> body_"$file".tmp
+		echo "" >> body_comp_"$file".tmp
+
+		#Nombre del tipo de  atributo
+		echo "$file" | sed 's!\(bd_\)\(.*\)\(\.tmp\)!\2:!' >> body_"$file".tmp
+		echo comp_"$file" | sed 's!\(comp_bd_\)\(.*\)\(\.tmp\)!\2 compl:!' >> body_comp_"$file".tmp
+
+		#Cantidad y miembros de cada tipo de atributo
+		echo "$line" | tr "\t" "\n" | sort | uniq -c >> body_"$file".tmp
+		
+		## Dado que hay menos cluster complementarios que seleccionados, se tiene que 
+		## agregar el body_complemento solo en las lineas que correspondan
+		let indx++	
+	#	echo "El valor de index_arr[$indx] ${index_arr[$indx]}; el valor de index_arr_comp[$indxc]  ${index_arr_comp[$indxc]} "
+		if [ -n "${index_arr_comp[$indxc]}" ]
+		then
+			if (( ${index_arr[$indx]} == ${index_arr_comp[$indxc]}  ))
+			then		
+				#echo "Entrando en linea $indx, con valor:  ${index_arr[$indx]}"
+				sed -i '/^$/d' comp_"$file"
+				awk -v line=$indxc '(NR==line+1){print}' comp_"$file" | tr "\t" "\n" | sort | uniq -c >> body_comp_"$file".tmp 
+			let indxc++
+			fi
+		fi
+		
+		## Se reyenan con \n la diferencia de es lineas entre body_comp_file y body_file
+		num1=$(wc -l body_comp_"$file".tmp | awk '{ print $1 }')
+		num2=$(wc -l body_"$file".tmp | awk '{print $1}')
+		
+		#echo "num1: $num1; num2: $num2"
+
+		touch void
+		if (( $num1 < $num2  ))
+		then
+			awk -v num1=$num1 -v num2=$num2 'END{ for(i=1; i<= num2 - num1; i++ ) {printf("\n")}  }' void >> body_comp_"$file".tmp
+		elif (( $num2 < $num1  ))	
+		then
+			awk -v num1=$num1 -v num2=$num2 'END{ for(i=1; i<= num1 - num2; i++ ) {printf("\n")}  }' void >>  body_"$file".tmp
+		fi
+		
+
+			
+	done
+
+#	echo "The file names are: $file"	
+	##Se le da formato a los datos para mejorar la legibilidad
+	sed -i 's!\([0-9]\+\)\(.*\)!\2:\t\1!' body_"$file".tmp  
+       	sed -i 's/^\( \)\+//' body_"$file".tmp
+	sed -i '1 s/###BODYSEP###//' body_"$file".tmp 
+
+	sed -i 's!\([0-9]\+\)\(.*\)!\2:\t\1!' body_comp_"$file".tmp
+	sed -i 's/^\( \)\+//' body_comp_"$file".tmp
+        sed -i '1 s/\\t//' body_comp_"$file".tmp
+
+	#Se juntan los atributos seleccionados con los complementarios
+	paste -d "&" body_"$file".tmp body_comp_"$file".tmp > "$file"_paste
+	cp body_"$file".tmp A.$file
+
+	#Se les da formato a ambos para mejorar la legibilidad
+	awk 'BEGIN{FS="&"}  {printf("%-50.45s", $1  ); printf("%.45s", $2); printf("\n")}' "$file"_paste > body_"$file".tmp
+	
+	
+done
+IFS=$IFS_old
+
+
+#Se actulizan los nombre de file_list
+sed  's/^/body_/' file_list3 | sed 's/$/\.tmp/' > file_list4
+
+
+## Se combina el contenido de todos los body_"$file".tmp en un archivo
+first_file=$(head -n1 file_list4)
+remainder_files=$(tail -n+2 file_list4)
+file_str=$(cat file_list4)
+
+awk -v files="$remainder_files" 'BEGIN{ RS="###BODYSEP###"; ORS="\n"; split(files, file_arr, "\n") } { print("###Cluster Sep###") ;print  ;for (val in file_arr) { getline < file_arr[val]; print}  }' "$first_file" > body_"$output_body".tmp
+
+
+}
+
+
+function head_n_body_ensambler 
+{
+
+echo "Ejecutando head_n_body_ensambler"
+
+output_head="final"
+output_body="final"
+
+
+##Se crea una lista de indices a excluir, compuesto por los clusters en donde la fraccion de genes seleccionados sea menor a la variable $min_representation 
+if [ -n $min_representation  ]
+then
+	awk -v min_rep="$min_representation" 'BEGIN{i=0} {i=+1} (NR%7==0 && $1<min_rep ){print NR/7}' ./crude_results/head_$output_head > exclude_file
+
+	excl_str=$( tr '\n' ',' < exclude_file  )
+
+fi
+
+#awk -v body=body_"$output_body".tmp 'BEGIN{ RS="###Cluster Sep###"; ORS=""} {print; getline < body; print}' ./crude_results/head_$output_head #> SEARCH_RESULT_"($1)" 
+
+
+
+awk -v body=body_$output_body.tmp -v excl_awk="$excl_str" 'BEGIN{ RS="###Cluster Sep###"; ORS=""; split(excl_awk, excl, "," ); i=1} (NR != (excl[i]+1)){print; getline < body; print} (NR == excl[i]+1){i+=1; getline < body} ' ./crude_results/head_$output_head > SEARCH_RESULT_"$1"
+
+cp SEARCH_RESULT_"$1" ./..
+cat SEARCH_RESULT_"$1"
+       	
+}
+
+
+function search_graphs
+{
+
+echo "Plotting Histogrmas and Barplots..."
+
+if [[ -d ./search_graphs ]]
+then
+        rm -r search_graphs
+        mkdir search_graphs
+else
+        mkdir search_graphs
+
+fi
+
+cd ./search_graphs
+
+cp ./../../search_bin/search_n_extract_graphs.py .
+cp ./../data_index .
+cp ./../crude_results/total_cluster_directorio_whole/cluster_chroms .
+mv cluster_chroms cluster_chroms_whole
+cp ./../crude_results/total_cluster_directorio_selection/cluster_chroms .
+mv cluster_chroms cluster_chroms_selection
+
+## Corregir indx=+1 por indx+=1 linea 174
+python3 search_n_extract_graphs.py "cluster_chroms" "data_index" "Cromosomas" "chroms"
+
+rm cluster_chroms_selection cluster_chroms_whole
+
+############################## HISTOGRAMA DE LARGOS ###############################
+
+cp ./../crude_results/data_directory_whole/largos_directorio/largo_* .
+paste -s largo_* > clust_largos_whole
+
+cp ./../crude_results/data_directory_selection/largos_directorio/largo_* .
+paste -s largo_* > clust_largos_selection
+
+cp ./../../search_bin/search_n_extract_hist.py .
+python3 search_n_extract_hist.py 'clust_largos_whole' 'clust_largos_selection' 'data_index' 'Largo en AA' 'largos' 1
+
+rm clust_largos_whole clust_largos_selection largo_*
+
+############################### HISTOGRAMA DE CG ####################################
+
+cp ./../crude_results/jceegee_directorio_whole/clusters_cg/cluster_cg_* .
+sed -i 's/ .*//' cluster_cg_*
+paste -s cluster_cg_* > clust_cg_whole
+
+cp ./../crude_results/jceegee_directorio_selection/clusters_cg/cluster_cg_* .
+sed -i 's/ .*//' cluster_cg_*
+paste -s cluster_cg_* > clust_cg_selection
+
+python3 search_n_extract_hist.py 'clust_cg_whole' 'clust_cg_selection' 'data_index' 'Fraccion de CG' 'cg' 5
+
+rm clust_cg_whole clust_cg_selection cluster_cg_*
+
+################################## HISTOGRAMA DE CG TOTAL ############################
+
+cp ./../crude_results/jceegee_directorio_whole/clusters_cg/cluster_cg_* .
+sed -i 's/ *$//' cluster_cg_*
+sed -i 's/.* //' cluster_cg_*
+paste -s cluster_cg_* > clust_total_cg_whole
+
+cp ./../crude_results/jceegee_directorio_selection/clusters_cg/cluster_cg_* .
+sed -i 's/ *$//' cluster_cg_*
+sed -i 's/.* //' cluster_cg_*
+paste -s cluster_cg_* > clust_total_cg_selection
+
+python3 search_n_extract_hist.py 'clust_total_cg_selection' 'clust_total_cg_selection' 'data_index' 'Total de CG' 'total_cg' 1
+
+rm clust_total_cg_whole clust_total_cg_selection cluster_cg_*
+
+################################## HeatMaps and Dendrograms ###########################
+
+echo "Plotting Heatmaps and Dendrograms..."
+cp ./../../search_bin/abc_filter ./../../search_bin/heatmap_dendrogram.py .
+cp ./../data_index ./../out_mci_whole . ## Usar out_mci_whole,  y señalar seleccionados #Anteriormente se uasba data_out_mci
+cp ./../../blastp_evalue.abc  .
+
+source abc_filter
+abc_filter_func out_mci_whole
+
+tr "\\n" "\\t" < out_mci_whole > order_out_mci
+sed -i 's/\\t$//' order_out_mci
+
+awk '{print NF}' out_mci_whole > gene_number
+tr "\\n" "\\t" < gene_number > A
+mv A gene_number
+
+python3 heatmap_dendrogram.py
+
+#rm order_out_mci gene_number
+
+################################### ORDENANDO FIGURAS GENERADAS ########################
+
+for clust in $(cat data_index)
+do
+        mkdir cluster_$clust
+        mv Cluster_"$clust"_* cluster_$clust
+done
+
+## Se remueven otros archivos usados para graficar
+#rm data_index search_n_extract_graphs.py search_n_extract_hist.py
+
+echo "Plotting finished"
+
+## Agregar opcion para modificar el numero de bins
+## Despues hacer un barplot generico para los elementos del cuerpo (opcional)
+## Opcion para poder usar o no los graficos
+## Averiguar sobre los heat maps
+
+
+}                                                                                                                                                                                                                                                                                   
+############################### Creacion del Dataframe ###############################
+function master_df2 {
+pwd
+source ./../search_bin/gene_dataframe
+master_df $1 $2 $3
+
+}                                                                                                                                                                                                                                                                              
+                                               
+function master_input ## Para remover, tarea realizada por extract_n_search 
+{
+## Tamaño minimo de los cluster seleccionados y enteros
+## a tomar en cuenta al realizar la busqueda
+min_whole=""
+min_selection=""
+
+function usage()
+{
+
+#Solo se han implementado las opciones -s y -w
+echo "Usage: cluster_search [-s | --min-selection INT ]
+			    [-w | --min-whole INT]
+			    [-a | --faa FILE]
+			    [-g | --gff FILE]
+			    [-f | --fasta FILE]
+			    [-S | --search REGEXP]"
+exit 2
+
+}
+
+PARSED_ARGUMENTS=$( getopt -a -n cluster_search -o w:s: --long min-whole:,min-selection: -- "$@" )
+VALID_ARGUMENTS=$?
+
+if [ "$VALID_ARGUMENTS" != "0"  ]; then
+	usage
+fi
+
+#echo "PARSED_ARGUMENTS is $PARSED_ARGUMENTS"
+eval set -- "$PARSED_ARGUMENTS"
+
+while :
+do
+	case "$1" in
+		-s | --min-selection) min_selection="$2" ; shift 2;;
+		-w | --min-whole) min_whole="$2" ; shift 2;;
+		--) shift 1; break ;;
+		*) echo "Unexpected option: $1"; usage
+	esac
+done
+
+echo "Final arguments: $@"
+echo "Min selection value: $min_selection"
+echo "Min whole value: $min_whole"
+
+################ Ejecutando el resto del Script ###############
+
+master_function "$@"
+
+
+}
+
+
+function functions_reuse
+{
+	echo "Ejecutando function_reuse"
+	functions_reuse_starter $1 $2 $3
+	total_cluster_reuse 
+	data_cl2_reuse 
+	ceegee_juaco_reuse 
+	head_maker
+
+}
+
+
+
+
+function master_function 
+{
+
+### Iniciacion de la funcion, creacion de directiorio
+### importacion de files necesarios
+	searcher_start
+       
+### Se crea una tabla que contiene los genes que contienen att.
+### que coincicen con la regex $4
+	grid_maker; grid_maker2 $4
+
+## Se separa el grid en archivos ( data_out_mci, data_atribute1, ..   ) 
+	data_file_maker
+
+## Analogo para archivos complementarios
+#	comp_grid_maker2 $4; comp_data_file_maker
+
+## Se obtienen un lista con los ges seleccionados y otra con todos
+## los genes, se calcula la proporcion entre estos 
+	data_out_mci_analizer
+
+## Se usan las funciones de searcher_bin para extraer datos (cg y largo)
+## tambien se ensamban los encabezados
+	functions_reuse $1 $2 $3
+	
+## Se ensambla el cuerpo de la salida. Luego se cjunta el cuerpo y el encabezado de cada cluster en un solo archivo
+	body_ensambler
+	head_n_body_ensambler $4
+
+## A partir de los datos obtenidos en functions reuse se crean distintos histogramas y graficos de barras
+## $plot es definida por extract_n_search a partir de la opcion P
+	if [ "$plot" = "TRUE"  ]
+	then
+		search_graphs
+		cd ./..
+	fi
+## Se generan dataframes con los datos obtenidos
+	master_df2 out_mci data_out_mci out_mci_whole $1
+
+}
+
+#master_function Ncaninum_LIV.gff3 Ncaninum_LIV.faa Ncaninum_LIV.Mfasta "SRS|srs|SAG"
+#master_input -min-selection 1 -min-whole 5 Ncaninum_LIV.gff3 Ncaninum_LIV.faa Ncaninum_LIV.Mfasta "SRS|srs|SAG"
