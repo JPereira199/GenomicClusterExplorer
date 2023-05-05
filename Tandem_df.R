@@ -119,7 +119,7 @@ ChromData <- function(df) {
   
 }
 
-## Función sin uso, al igual que ChromData, Tandem_count obtiene distintos
+## Función sin uso. Al igual que ChromData, Tandem_count obtiene distintos
 ## datos por cromosoma de la familia multigénica buscada. Además separa
 ## esos datos según los genes pertenescan a un tandem o no
 ## P. ej: num0XChrom y num1XChrom indican respectivamente el número de genes
