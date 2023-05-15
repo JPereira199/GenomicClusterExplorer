@@ -12,22 +12,21 @@
 function refeed_start
 {
 
-#$1: out_mci 
-#$2: faa
-#$3: Mfasta
-#$4: gff
-#$5: sufix_name 
+  #$1: out_mci 
+  #$2: faa
+  #$3: Mfasta
+  #$4: gff
+  #$5: sufix_name 
 
+  mkdir refeed_dir_"$5" 
 
-mkdir refeed_dir_"$5" 
+  cp ./../$1 out_mci
+  cp ./../$2 faa
+  cp ./../$3 Mfasta
+  cp ./../$4 gff
 
-cp ./../$1 out_mci
-cp ./../$2 faa
-cp ./../$3 Mfasta
-cp ./../$4 gff
-
-mv  out_mci faa Mfasta gff ./refeed_dir_"$5"
-cd ./refeed_dir_"$5"
+  mv  out_mci faa Mfasta gff ./refeed_dir_"$5"
+  cd ./refeed_dir_"$5"
 
 }
 
@@ -35,32 +34,57 @@ cd ./refeed_dir_"$5"
 function refeed_mini
 {
 
-tr "\t" "\n" < out_mci > names.temp
-sed -i '/^$/d ' names.temp
+  tr "\t" "\n" < out_mci > names.temp
+  sed -i '/^$/d ' names.temp
 
-## Se crean mini faa y Mfasta con las secuencias nombradas en names.temp
-xargs samtools faidx faa < names.temp > mini_faa_"$1"
-xargs samtools faidx Mfasta < names.temp > mini_Mfasta_"$1"
+  ## Se crean mini faa y Mfasta con las secuencias nombradas en names.temp
+  xargs samtools faidx faa < names.temp > mini_faa_"$1"
+  xargs samtools faidx Mfasta < names.temp > mini_Mfasta_"$1"
 
-rm names.temp
+  rm names.temp
 
 }
 
-## Agrega el atributo Org_name al gff
+## Agrega el atributo Org_name a los genes y cromosomas de gff
 function refeed_orgname
 {
 
-#$1 suffix_name
-#$2 org_name
+  ## $1 suffix_name
+  ## $2 org_name
 
-#Se crea una expresión regular para agregar el atributo Org_name a todos los genes de una sola vez
-sed_regexp=$(tr "\n" "\t" < out_mci |\
-       	sed 's/^\t\|\t$//g' |\
-       	sed 's/^/\\(ID=/; s/$/;\\)/' |\
-       	sed 's/\t/;\\|ID=/g')
+  ## Se particiona el archivo out_mci. Con el objetivo de evitar el error 
+  ## "La lista de argumentos es demasiado larga"
 
-sed -i "s/$sed_regexp/&Org_name=$1;/g" gff 
+  mkdir split_mci
+  cp out_mci ./split_mci
+  cd ./split_mci
+ 
+  tr "\t" "\n" < out_mci > temp		#Se agrupan todos losgenes en una sola columna
+  sed -i '/^[[:space:]]*$/d' temp	#Se borran posible lineas vacias
+  split -l 3000 temp			#Se subdivide temp en archivos de 3000 lineas
+  rm out_mci temp
+  
+  for file in $( ls )
+  do
+ 
+    ## Se crea una expresión regular para agregar el atributo Org_name
+    ## a todos los genes de una sola vez
+    sed_regexp=$(tr "\n" "\t" < $file |\
+          	  sed 's/^\t\|\t$//g' |\
+        	  sed 's/^/\\(ID=/; s/$/;\\)/' |\
+        	  sed 's/\t/;\\|ID=/g')
 
+    sed -i "s/$sed_regexp/&Org_name=$1;/g" ./../gff 
+
+  done
+ 
+  cd ..  
+  rm -rf split_mci
+  
+  ## Se agrega el atributo Org_name a todos los contigs/cromosomas
+  ## encontrados al inicio del archivo
+
+  sed -i "s/##sequence.*/& $1/" gff
 
 }
 
@@ -118,8 +142,9 @@ touch all_gff
 for i in ${!mci_vect[@]} #La variable 'i' toma valores 0 1 2 . . 
 do
 
-	echo "Index de mci_vect: $i"
-	
+	#echo "Index de mci_vect: $i"
+	echo "Procesando genoma Nº$i "
+
 	mci_var=${mci_vect[$i]}
 	faa_var=${faa_vect[$i]}
 	Mfasta_var=${Mfasta_vect[$i]}
@@ -143,21 +168,15 @@ do
        	mv C all_mci
 	mv D all_gff
 	
-	#cp ./../"$gff_var" .
-
 done
-#cat ${gff_vect[@]} > all_gff	
-#rm ${gff_vect[@]} &> temp ; rm temp
-
 
 }
 
 ##Falta revisar que esten todos los archivos de entrada
 
-#refeed_start out_mci_whole Ncaninum_LIV.faa
-#refeed_mini_faa
+#refeed_recursive "Ncaninum.mci Tgondii.mci" "Ncaninum_LIV.faa TgondiiME49_Genome.faa" "Ncaninum_LIV.Mfasta TgondiiME49.Mfasta" "Ncaninum_LIV.gff3 TgondiiME49.gff" "NcSRS TgSRS" "Ncaninum Tgondii"
 
-refeed_recursive "./single_mci/out_mci_whole_NcSRS ./single_mci/out_mci_whole_TgSRS" "Ncaninum_LIV.faa TgondiiME49_Genome.faa" "Ncaninum_LIV.Mfasta TgondiiME49.Mfasta" "Ncaninum_LIV.gff3 TgondiiME49.gff" "NcSRS TgSRS" "Ncaninum Tgondii"
+#refeed_recursive "./single_mci/out_mci_whole_NcSRS ./single_mci/out_mci_whole_TgSRS" "Ncaninum_LIV.faa TgondiiME49_Genome.faa" "Ncaninum_LIV.Mfasta TgondiiME49.Mfasta" "Ncaninum_LIV.gff3 TgondiiME49.gff" "NcSRS TgSRS" "Ncaninum Tgondii"
 #refeed_recursive "./single_mci/out_mci_whole_NcMIC ./single_mci/out_mci_whole_TgMIC" "Ncaninum_LIV.faa TgondiiME49_Genome.faa" "Ncaninum_LIV.Mfasta TgondiiME49.Mfasta" "Ncaninum_LIV.gff3 TgondiiME49.gff" "NcMIC TgMIC" "Ncaninum Tgondii"
 
 #refeed_recursive "./single_mci/out_mci_whole_NcGRA ./single_mci/out_mci_whole_TgGRA" "Ncaninum_LIV.faa TgondiiME49_Genome.faa" "Ncaninum_LIV.Mfasta TgondiiME49.Mfasta" "Ncaninum_LIV.gff3 TgondiiME49.gff" "NcGRA TgGRA" "Ncaninum Tgondii"
@@ -172,12 +191,3 @@ refeed_recursive "./single_mci/out_mci_whole_NcSRS ./single_mci/out_mci_whole_Tg
 
 #3
 #Realizar correr el blastp_mcl_protocolo desde el blastp
-
-
-
-
-
-
-
- 
-
