@@ -177,6 +177,40 @@ cat col_titles $1 > A
 mv A $1
 }
 
+function coords_start {
+
+       cp ./../crude_results/gff .
+       # cp ./$2 df
+       df_input=$1
+       df_output=$2
+        echo "Start" > A; echo "End" > B; echo "Chrom" > C
+        paste -d "\t" C A B > coords; rm A B C
+
+        awk '( NR > 1 ){ print $1  }' $df_input > gen_col
+
+        for genID in $( cat gen_col )
+        do
+
+                grep "ID=$genID" gff | head -n1 >> A
+        done
+
+        awk '{ print($1"\t"$4"\t"$5) }' A > B
+
+        cat B >> coords; rm A B
+
+        paste -d "\t" $df_input coords > $df_output
+
+}
+
+function R_tandems {
+	
+	cp ./../../../scripts/search_bin/Tandem_df.R .
+	path=$(pwd)
+	Rscript Tandem_df.R $path $1 $2 $3
+
+
+}
+
 function master_df {
 ## Se inicia trabajando con todos los clusters
 ## luego se filtran con los genes perteneciente a 
@@ -197,7 +231,12 @@ df_longs
 ## Se agregan los nombres de las columnas
 df_titles "df_filtered_selection"
 df_titles "df_filtered_whole"
-
+## Se agregan las coordenadas de cada gen
+coords_start "df_filtered_selection" "df_coords_selection"
+coords_start "df_filtered_whole" "df_coords"
+## Se indica a que tandem pertenece cada gen
+## Se crea una tabla con datos por cromosoma
+R_tandems 8000 df_coords df_tandems
 }
 
 #master_df out_mci data_out_mci out_mci_whole
