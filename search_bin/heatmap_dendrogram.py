@@ -15,9 +15,6 @@ import numpy as np
 genes1 = pd.read_csv('order_out_mci', sep='\t')
 data1 = pd.read_csv('evalue_filter2', sep='\t', lineterminator='\n', header=None)
 
-#data.describe()
-#genes.describe()
-
 #Se crea una matriz vacia que respeta el orden original de los genes
 cols1=rows1=[x for x in genes1]
 matrix1=pd.DataFrame(99, columns=cols1, index=rows1, dtype='float')
