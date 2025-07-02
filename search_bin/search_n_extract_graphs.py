@@ -68,8 +68,8 @@ def atribute_barplot ( att_file = str, index_file = str ,xlabel = '', img_name =
         else:
             clust_dict2[i] = 1
 
-    clust_dict1.pop('')
-    clust_dict2.pop('')
+    clust_dict1.pop('', None)
+    clust_dict2.pop('', None)
 
     ### Se agregan los indices faltantes de clust_dict1 a clust_dict2
     for i in clust_dict1:
